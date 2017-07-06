@@ -96,69 +96,7 @@ private[h2o] object SparkDataFrameConverter extends Logging {
     // Creates array of H2O NewChunks; A place to record all the data in this partition
     con.createChunks(keyName, vecTypes, context.partitionId())
 
-    def convert(subRow: Row, idx: Int = 0): Int = {
-      var currentIdx = idx
-      subRow.schema.fields.zipWithIndex.foreach { pair =>
-        val structEntry = pair._1
-        val idxInRow = pair._2
-        structEntry.dataType match {
-          case _: StructType => {
-            currentIdx = convert(subRow.getAs[Row](idxInRow), currentIdx)
-          }
-          case simple: DataType =>
-            // Convert simple type
-            if (subRow.isNullAt(idxInRow)) {
-              con.putNA(currentIdx)
-            } else {
-              simple match {
-                case BooleanType => con.put(currentIdx, if (subRow.getBoolean(idxInRow)) 1 else 0)
-                case BinaryType =>
-                case ByteType => con.put(currentIdx, subRow.getByte(idxInRow))
-                case ShortType => con.put(currentIdx, subRow.getShort(idxInRow))
-                case IntegerType => con.put(currentIdx, subRow.getInt(idxInRow))
-                case LongType => con.put(currentIdx, subRow.getLong(idxInRow))
-                case FloatType => con.put(currentIdx, subRow.getFloat(idxInRow))
-                case _: DecimalType => con.put(currentIdx, subRow.getDecimal(idxInRow).doubleValue())
-                case DoubleType => con.put(currentIdx, subRow.getDouble(idxInRow))
-                case StringType => con.put(currentIdx, subRow.getString(idxInRow))
-                case TimestampType => con.put(currentIdx, subRow.getAs[java.sql.Timestamp](idxInRow))
-                case DateType => con.put(currentIdx, subRow.getAs[java.sql.Date](idxInRow))
-                case _ => con.putNA(currentIdx)
-              }
-            }
-            currentIdx = currentIdx + 1 // one column filled
-        }
-      }
-      currentIdx // return number of written columns
-    }
-
-    // need to have mapping from schema -> to flatRDD location
-    //TODO handle arrays and vectors externally
-    //TODO that will make this code readable and extendable
-    iterator.foreach{ row =>
-      val ret = convert(row)
-      val a = 1
-/*      types.indices.foreach { idx => // Index of column
-        val field = types(idx)
-        val path = field._1
-        val dataType = field._2.dataType
-
-
-        // Helpers to distinguish embedded collection types
-        val isAry = field._3 == H2OSchemaUtils.ARRAY_TYPE
-        val isVec = field._3 == H2OSchemaUtils.VEC_TYPE
-
-
-        var i = 0
-        var subRow = row
-        while (i < path.length - 1 && !subRow.isNullAt(path(i))) {
-          subRow = subRow.getAs[Row](path(i))
-          i += 1
-        }
-        val aidx = path(i) // actual index into row provided by path
-
-      }*/
-    }
+    iterator.foreach{sparkRowToH2ORow(_)}
 
 /*
 
@@ -243,6 +181,45 @@ private[h2o] object SparkDataFrameConverter extends Logging {
 
     // Return Partition number and number of rows in this partition
     (context.partitionId, con.numOfRows())
+  }
+
+  /**
+    * Converts a single Spark Row to H2O Row with expanded vectors and arrays
+    */
+  private def sparkRowToH2ORow(subRow: Row, idx: Int = 0): Int = {
+    var currentIdx = idx
+    subRow.schema.fields.zipWithIndex.foreach { pair =>
+      val structEntry = pair._1
+      val idxInRow = pair._2
+      structEntry.dataType match {
+        case _: StructType => {
+          currentIdx = sparkRowToH2ORow(subRow.getAs[Row](idxInRow), currentIdx)
+        }
+        case simple: DataType =>
+          // Convert simple type
+          if (subRow.isNullAt(idxInRow)) {
+            con.putNA(currentIdx)
+          } else {
+            simple match {
+              case BooleanType => con.put(currentIdx, if (subRow.getBoolean(idxInRow)) 1 else 0)
+              case BinaryType =>
+              case ByteType => con.put(currentIdx, subRow.getByte(idxInRow))
+              case ShortType => con.put(currentIdx, subRow.getShort(idxInRow))
+              case IntegerType => con.put(currentIdx, subRow.getInt(idxInRow))
+              case LongType => con.put(currentIdx, subRow.getLong(idxInRow))
+              case FloatType => con.put(currentIdx, subRow.getFloat(idxInRow))
+              case _: DecimalType => con.put(currentIdx, subRow.getDecimal(idxInRow).doubleValue())
+              case DoubleType => con.put(currentIdx, subRow.getDouble(idxInRow))
+              case StringType => con.put(currentIdx, subRow.getString(idxInRow))
+              case TimestampType => con.put(currentIdx, subRow.getAs[java.sql.Timestamp](idxInRow))
+              case DateType => con.put(currentIdx, subRow.getAs[java.sql.Date](idxInRow))
+              case _ => con.putNA(currentIdx)
+            }
+          }
+          currentIdx = currentIdx + 1 // one column filled
+      }
+    }
+    currentIdx // return number of written columns
   }
 
   private def getVecLen(r: Row, idx: Int): Int = {
