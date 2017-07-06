@@ -73,7 +73,7 @@ object H2OSchemaUtils {
     StructType(types)
   }
 
-  /** Return flattenized type - recursively transforms StrucType into Seq of encapsulated types. */
+  /** Return flattenized type - recursively transforms StructType into Seq of encapsulated types. */
   def flatSchema(s: StructType, typeName: Option[String] = None, nullable: Boolean = false): Seq[StructField] = {
     s.fields.flatMap(f =>
       f.dataType match {
@@ -94,25 +94,23 @@ object H2OSchemaUtils {
     *  - all arrays are expanded into columns based on the longest one
     *  - all vectors are expanded into columns
     *
-    * @param sc   actual Spark context
-    * @param srdd schema-based RDD
+    * @param sc         actual Spark context
+    * @param dataframe  Spark Data Frame
     * @return list of types with their positions
     */
-  def expandedSchema(sc: SparkContext, srdd: DataFrame): Seq[(Seq[Int], StructField, Byte)] = {
-    val schema: StructType = srdd.schema
+  def expandedSchema(sc: SparkContext, dataframe: DataFrame): Seq[(Seq[Int], StructField, Byte)] = {
+    val schema: StructType = dataframe.schema
     // Collect max size in array and vector columns to expand them
     val arrayColIdxs = collectArrayLikeTypes(schema.fields)
     val vecColIdxs = collectVectorLikeTypes(schema.fields)
     val numOfArrayCols = arrayColIdxs.length
-    // Collect max arrays for this RDD, it is distributed operation
-    val fmaxLens = collectMaxArrays(sc, srdd, arrayColIdxs, vecColIdxs)
+    // Collect max arrays for this Data Frame, it is distributed operation
+    val fmaxLens = collectMaxArrays(sc, dataframe, arrayColIdxs, vecColIdxs)
     // Flattens RDD's schema
     val flatRddSchema = flatSchema(schema)
     val typeIndx = collectTypeIndx(schema.fields)
-    val typesAndPath = typeIndx
-      .zip(flatRddSchema) // Seq[(Seq[Int], StructField)]
-    var arrayCnt = 0;
-    var vecCnt = 0
+    val typesAndPath = typeIndx.zip(flatRddSchema) // Seq[(Seq[Int], StructField)]
+    var arrayCnt = 0; var vecCnt = 0
     // Generate expanded schema
     val expSchema = typesAndPath.indices.flatMap { idx =>
       val tap = typesAndPath(idx)

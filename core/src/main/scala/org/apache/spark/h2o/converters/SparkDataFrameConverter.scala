@@ -20,7 +20,9 @@ package org.apache.spark.h2o.converters
 import org.apache.spark._
 import org.apache.spark.h2o.H2OContext
 import org.apache.spark.h2o.backends.external.ExternalWriteConverterCtx
+import org.apache.spark.h2o.converters.SparkDataFrameConverter.{getVecLen, getVecVal}
 import org.apache.spark.h2o.converters.WriteConverterCtxUtils.UploadPlan
+import org.apache.spark.h2o.utils.H2OSchemaUtils.flatSchema
 import org.apache.spark.h2o.utils.{H2OSchemaUtils, ReflectionUtils}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.types._
@@ -94,6 +96,72 @@ private[h2o] object SparkDataFrameConverter extends Logging {
     // Creates array of H2O NewChunks; A place to record all the data in this partition
     con.createChunks(keyName, vecTypes, context.partitionId())
 
+    def convert(subRow: Row): Int = {
+      var idx = 0
+      subRow.schema.fields.zipWithIndex.foreach { pair =>
+        val structEntry = pair._1
+        val idxInRow = pair._2
+        structEntry.dataType match {
+          case _: StructType => {
+            val numColsWritten = convert(subRow.getAs[Row](idxInRow))
+            idx = idx + numColsWritten
+          }
+          case simple: DataType =>
+            // Convert simple type
+            if (subRow.isNullAt(idxInRow)) {
+              con.putNA(idx)
+            } else {
+              simple match {
+                case BooleanType => con.put(idx, if (subRow.getBoolean(idxInRow)) 1 else 0)
+                case BinaryType =>
+                case ByteType => con.put(idx, subRow.getByte(idxInRow))
+                case ShortType => con.put(idx, subRow.getShort(idxInRow))
+                case IntegerType => con.put(idx, subRow.getInt(idxInRow))
+                case LongType => con.put(idx, subRow.getLong(idxInRow))
+                case FloatType => con.put(idx, subRow.getFloat(idxInRow))
+                case _: DecimalType => con.put(idx, subRow.getDecimal(idxInRow).doubleValue())
+                case DoubleType => con.put(idx, subRow.getDouble(idxInRow))
+                case StringType => con.put(idx, subRow.getString(idxInRow))
+                case TimestampType => con.put(idx, subRow.getAs[java.sql.Timestamp](idxInRow))
+                case DateType => con.put(idx, subRow.getAs[java.sql.Date](idxInRow))
+                case _ => con.putNA(idx)
+              }
+            }
+            idx = idx + 1 // one column filled
+        }
+      }
+      idx // return number of written columns
+    }
+
+    // need to have mapping from schema -> to flatRDD location
+    //TODO handle arrays and vectors externally
+    //TODO that will make this code readable and extendable
+    iterator.foreach{ row =>
+      convert(row)
+/*      types.indices.foreach { idx => // Index of column
+        val field = types(idx)
+        val path = field._1
+        val dataType = field._2.dataType
+
+
+        // Helpers to distinguish embedded collection types
+        val isAry = field._3 == H2OSchemaUtils.ARRAY_TYPE
+        val isVec = field._3 == H2OSchemaUtils.VEC_TYPE
+
+
+        var i = 0
+        var subRow = row
+        while (i < path.length - 1 && !subRow.isNullAt(path(i))) {
+          subRow = subRow.getAs[Row](path(i))
+          i += 1
+        }
+        val aidx = path(i) // actual index into row provided by path
+
+      }*/
+    }
+
+/*
+
     iterator.foreach(row => {
       var startOfSeq = -1
       // Fill row in the output frame
@@ -126,9 +194,11 @@ private[h2o] object SparkDataFrameConverter extends Logging {
           if (isAry && aryIdx >= aryLen) con.putNA(idx)
           else if (isVec && aryIdx >= vecLen) con.put(idx, 0.0) // Add zeros for double vectors
           else dataType match {
-            case BooleanType => con.put(idx, if (isAry)
+            case BooleanType => con.put(idx, if(isAry){
               if (ary(aryIdx).asInstanceOf[Boolean]) 1 else 0
-            else if (subRow.getBoolean(aidx)) 1 else 0)
+            } else {
+              if (subRow.getBoolean(aidx)) 1 else 0)
+            })
             case BinaryType =>
             case ByteType => con.put(idx, if (isAry) ary(aryIdx).asInstanceOf[Byte] else subRow.getByte(aidx))
             case ShortType => con.put(idx, if (isAry) ary(aryIdx).asInstanceOf[Short] else subRow.getShort(aidx))
@@ -166,6 +236,7 @@ private[h2o] object SparkDataFrameConverter extends Logging {
 
       }
     })
+*/
 
     //Compress & write data in partitions to H2O Chunks
     con.closeChunks()

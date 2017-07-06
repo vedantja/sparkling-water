@@ -17,12 +17,10 @@
 
 package org.apache.spark.h2o.converters
 
-import org.apache.spark.{TaskContext, mllib}
 import org.apache.spark.h2o._
 import org.apache.spark.h2o.converters.WriteConverterCtxUtils.UploadPlan
 import org.apache.spark.internal.Logging
-import org.apache.spark.mllib.linalg.{SparseVector, Vectors}
-import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.{TaskContext, mllib}
 import water.fvec.{H2OFrame, Vec}
 import water.{ExternalFrameUtils, Key}
 
@@ -37,25 +35,24 @@ private[converters] object MLLibVectorConverter extends Logging {
 
     // lets assume this is sparse for now, all of those guys
 
-    // first convert vector to dense vector
-    val numFeatures = rdd.map(vector => vector.size)
+    // we can work with sparse vector
+    val numFeatures = rdd.map(v => v.size)
     val maxNumFeatures = numFeatures.max()
     val minNumFeatures = numFeatures.min()
     if(minNumFeatures<maxNumFeatures){
       // Features vectors of different sizes, filling missing with n/a
       logWarning("WARNING: Converting RDD[LabeledPoint] to H2OFrame where features vectors have different size, filling missing with n/a")
     }
-    val fnames = ("label" :: 0.until(maxNumFeatures).map("feature" +).toList).toArray[String]
+
+    val fnames = 0.until(maxNumFeatures).map("v_" +).toArray[String]
 
     // in case of internal backend, store regular vector types
     // otherwise for external backend store expected types
     val typeToUse = if(hc.getConf.runsInInternalClusterMode) Vec.T_NUM else ExternalFrameUtils.EXPECTED_DOUBLE
-    val expectedTypes = Array.fill(maxNumFeatures + 1)(typeToUse)
+    val expectedTypes = Array.fill(maxNumFeatures)(typeToUse)
 
-    WriteConverterCtxUtils.convert[LabeledPoint](hc, rdd, keyName, fnames, expectedTypes, perLabeledPointRDDPartition(maxNumFeatures))
+    WriteConverterCtxUtils.convert[mllib.linalg.Vector](hc, rdd, keyName, fnames, expectedTypes, perMLlibVectorPartition(maxNumFeatures))
   }
-
-  private def isSparse(vec: mllib.linalg.Vector) = vec.isInstanceOf[SparseVector]
 
 
   /**
@@ -69,34 +66,15 @@ private[converters] object MLLibVectorConverter extends Logging {
     * @return pair (partition ID, number of rows in this partition)
     */
   private[this]
-  def perLabeledPointRDDPartition(maxNumFeatures: Int)
+  def perMLlibVectorPartition(maxNumFeatures: Int)
                                  (keyName: String, vecTypes: Array[Byte], uploadPlan: Option[UploadPlan], writeTimeout: Int)
-                                 (context: TaskContext, it: Iterator[LabeledPoint]): (Int, Long) = {
+                                 (context: TaskContext, it: Iterator[mllib.linalg.Vector]): (Int, Long) = {
     val (iterator, dataSize) = WriteConverterCtxUtils.bufferedIteratorWithSize(uploadPlan, it)
     val con = WriteConverterCtxUtils.create(uploadPlan, context.partitionId(), dataSize, writeTimeout)
     // Creates array of H2O NewChunks; A place to record all the data in this partition
     con.createChunks(keyName, vecTypes, context.partitionId())
 
-    iterator.foreach(labeledPoint => {
-      // For all LabeledPoints in RDD
-      var nextChunkId = 0
-
-      // Add LabeledPoint label
-      con.put(nextChunkId, labeledPoint.label)
-      nextChunkId = nextChunkId + 1
-
-      for( i<-0 until labeledPoint.features.size) {
-        // For all features...
-        con.put(nextChunkId, labeledPoint.features(i))
-        nextChunkId = nextChunkId + 1
-      }
-
-      for( i<-labeledPoint.features.size until maxNumFeatures){
-        // Fill missing features with n/a
-        con.putNA(nextChunkId)
-        nextChunkId = nextChunkId + 1
-      }
-    })
+    iterator.foreach(vec => con.putVector(0, vec))
 
     //Compress & write data in partitions to H2O Chunks
     con.closeChunks()

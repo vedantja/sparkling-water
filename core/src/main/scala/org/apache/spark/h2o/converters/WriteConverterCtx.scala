@@ -17,6 +17,9 @@
 
 package org.apache.spark.h2o.converters
 
+import org.apache.spark._
+import org.apache.spark.mllib.linalg.{SparseVector, Vectors}
+
 /**
   * Methods which each WriteConverterCtx has to implement.
   *
@@ -52,6 +55,10 @@ trait WriteConverterCtx {
 
   def putNA(colIdx: Int)
 
+  def putSparseVector(startIdx: Int, size: Int, indices: Array[Int], values: Array[Double])
+
+  def putDenseVector(startIdx: Int, size: Int, values: Array[Double])
+
   def putAnySupportedType[T](colIdx: Int, data: T): Unit = {
     data match {
       case n: Boolean => put(colIdx, n)
@@ -68,6 +75,18 @@ trait WriteConverterCtx {
       case _ => putNA(colIdx)
     }
   }
+
+  def putVector(startIdx: Int, vec: mllib.linalg.Vector): Unit = {
+    if(vec.isInstanceOf[SparseVector]){
+      val sparseVec = vec.toSparse
+      putSparseVector(startIdx, sparseVec.size, sparseVec.indices, sparseVec.values)
+    }else{
+      val denseVector = vec.toDense
+      putDenseVector(startIdx, denseVector.size, denseVector.values)
+    }
+  }
+
+  def putVector(startIdx: Int, vec: ml.linalg.Vector): Unit = putVector(startIdx, Vectors.fromML(vec))
 
   def numOfRows(): Int
 }

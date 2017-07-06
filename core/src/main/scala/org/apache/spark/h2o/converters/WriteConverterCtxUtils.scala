@@ -37,7 +37,7 @@ object WriteConverterCtxUtils {
   def create(uploadPlan: Option[UploadPlan],
              partitionId: Int, totalNumOfRows: Option[Int], writeTimeout: Int): WriteConverterCtx = {
     uploadPlan
-      .map { plan => new ExternalWriteConverterCtx(uploadPlan.get(partitionId), totalNumOfRows.get, writeTimeout) }
+      .map { _ => new ExternalWriteConverterCtx(uploadPlan.get(partitionId), totalNumOfRows.get, writeTimeout) }
       .getOrElse(new InternalWriteConverterCtx())
   }
 

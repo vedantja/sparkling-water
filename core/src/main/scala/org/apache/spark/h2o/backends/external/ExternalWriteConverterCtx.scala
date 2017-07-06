@@ -66,6 +66,10 @@ class ExternalWriteConverterCtx(nodeDesc: NodeDesc, totalNumOfRows: Int, writeTi
   override def putNA(columnNum: Int) = externalFrameWriter.sendNA()
 
   override def numOfRows(): Int = totalNumOfRows
+
+  override def putSparseVector(startIdx: Int, size: Int, indices: Array[Int], values: Array[Double]): Unit = ???
+
+  override def putDenseVector(startIdx: Int, size: Int, values: Array[Double]): Unit = ???
 }
 
 

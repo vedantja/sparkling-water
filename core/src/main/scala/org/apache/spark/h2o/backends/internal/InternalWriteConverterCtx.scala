@@ -47,4 +47,20 @@ class InternalWriteConverterCtx extends WriteConverterCtx {
   override def putNA(columnNum: Int): Unit = chunks(columnNum).addNA()
 
   override def numOfRows(): Int = chunks(0).len()
+
+  override def putSparseVector(startIdx: Int, size: Int, indices: Array[Int], values: Array[Double]): Unit = {
+    (0 until size).filter(!indices.contains(_)).foreach{ idx =>
+      put(startIdx + idx, 0)
+    }
+
+    indices.indices.foreach{ idx =>
+      put(startIdx + idx, values(idx))
+    }
+  }
+
+  override def putDenseVector(startIdx: Int, size: Int, values: Array[Double]): Unit = {
+    values.indices.foreach{ idx =>
+      put(startIdx + idx, values(idx))
+    }
+  }
 }
