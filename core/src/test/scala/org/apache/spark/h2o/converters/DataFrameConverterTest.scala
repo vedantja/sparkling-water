@@ -364,7 +364,7 @@ class DataFrameConverterTest extends FunSuite with SharedSparkTestContext {
     assert(h2oFrame.vec(0).isTime)
   }
 
-  test("DataFrame[Struct(TimeStampField, IntegerField)] to H2OFrame[Time]") {
+  test("DataFrame[Struct(TimeStampField)] to H2OFrame[Time]") {
     import spark.implicits._
 
     val num = 20

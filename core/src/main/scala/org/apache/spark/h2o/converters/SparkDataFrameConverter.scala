@@ -96,48 +96,48 @@ private[h2o] object SparkDataFrameConverter extends Logging {
     // Creates array of H2O NewChunks; A place to record all the data in this partition
     con.createChunks(keyName, vecTypes, context.partitionId())
 
-    def convert(subRow: Row): Int = {
-      var idx = 0
+    def convert(subRow: Row, idx: Int = 0): Int = {
+      var currentIdx = idx
       subRow.schema.fields.zipWithIndex.foreach { pair =>
         val structEntry = pair._1
         val idxInRow = pair._2
         structEntry.dataType match {
           case _: StructType => {
-            val numColsWritten = convert(subRow.getAs[Row](idxInRow))
-            idx = idx + numColsWritten
+            currentIdx = convert(subRow.getAs[Row](idxInRow), currentIdx)
           }
           case simple: DataType =>
             // Convert simple type
             if (subRow.isNullAt(idxInRow)) {
-              con.putNA(idx)
+              con.putNA(currentIdx)
             } else {
               simple match {
-                case BooleanType => con.put(idx, if (subRow.getBoolean(idxInRow)) 1 else 0)
+                case BooleanType => con.put(currentIdx, if (subRow.getBoolean(idxInRow)) 1 else 0)
                 case BinaryType =>
-                case ByteType => con.put(idx, subRow.getByte(idxInRow))
-                case ShortType => con.put(idx, subRow.getShort(idxInRow))
-                case IntegerType => con.put(idx, subRow.getInt(idxInRow))
-                case LongType => con.put(idx, subRow.getLong(idxInRow))
-                case FloatType => con.put(idx, subRow.getFloat(idxInRow))
-                case _: DecimalType => con.put(idx, subRow.getDecimal(idxInRow).doubleValue())
-                case DoubleType => con.put(idx, subRow.getDouble(idxInRow))
-                case StringType => con.put(idx, subRow.getString(idxInRow))
-                case TimestampType => con.put(idx, subRow.getAs[java.sql.Timestamp](idxInRow))
-                case DateType => con.put(idx, subRow.getAs[java.sql.Date](idxInRow))
-                case _ => con.putNA(idx)
+                case ByteType => con.put(currentIdx, subRow.getByte(idxInRow))
+                case ShortType => con.put(currentIdx, subRow.getShort(idxInRow))
+                case IntegerType => con.put(currentIdx, subRow.getInt(idxInRow))
+                case LongType => con.put(currentIdx, subRow.getLong(idxInRow))
+                case FloatType => con.put(currentIdx, subRow.getFloat(idxInRow))
+                case _: DecimalType => con.put(currentIdx, subRow.getDecimal(idxInRow).doubleValue())
+                case DoubleType => con.put(currentIdx, subRow.getDouble(idxInRow))
+                case StringType => con.put(currentIdx, subRow.getString(idxInRow))
+                case TimestampType => con.put(currentIdx, subRow.getAs[java.sql.Timestamp](idxInRow))
+                case DateType => con.put(currentIdx, subRow.getAs[java.sql.Date](idxInRow))
+                case _ => con.putNA(currentIdx)
               }
             }
-            idx = idx + 1 // one column filled
+            currentIdx = currentIdx + 1 // one column filled
         }
       }
-      idx // return number of written columns
+      currentIdx // return number of written columns
     }
 
     // need to have mapping from schema -> to flatRDD location
     //TODO handle arrays and vectors externally
     //TODO that will make this code readable and extendable
     iterator.foreach{ row =>
-      convert(row)
+      val ret = convert(row)
+      val a = 1
 /*      types.indices.foreach { idx => // Index of column
         val field = types(idx)
         val path = field._1
