@@ -74,7 +74,7 @@ private[converters] object MLLibVectorConverter extends Logging {
     // Creates array of H2O NewChunks; A place to record all the data in this partition
     con.createChunks(keyName, vecTypes, context.partitionId())
 
-    iterator.foreach(vec => con.putVector(0, vec))
+    iterator.foreach(vec => con.putVector(0, vec, maxNumFeatures))
 
     //Compress & write data in partitions to H2O Chunks
     con.closeChunks()

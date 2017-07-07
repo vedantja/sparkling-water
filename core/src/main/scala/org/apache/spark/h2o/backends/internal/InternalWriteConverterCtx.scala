@@ -48,7 +48,7 @@ class InternalWriteConverterCtx extends WriteConverterCtx {
 
   override def numOfRows(): Int = chunks(0).len()
 
-  override def putSparseVector(startIdx: Int, size: Int, indices: Array[Int], values: Array[Double]): Unit = {
+  override def putSparseVector(startIdx: Int, size: Int, indices: Array[Int], values: Array[Double], maxVecSize: Int): Unit = {
     (0 until size).filter(!indices.contains(_)).foreach{ idx =>
       put(startIdx + idx, 0)
     }
@@ -56,11 +56,14 @@ class InternalWriteConverterCtx extends WriteConverterCtx {
     indices.indices.foreach{ idx =>
       put(startIdx + idx, values(idx))
     }
+    (size until maxVecSize).foreach( vecIdx => put(startIdx + vecIdx, 0.0))
   }
 
-  override def putDenseVector(startIdx: Int, size: Int, values: Array[Double]): Unit = {
+  override def putDenseVector(startIdx: Int, size: Int, values: Array[Double], maxVecSize: Int): Unit = {
     values.indices.foreach{ idx =>
       put(startIdx + idx, values(idx))
     }
+
+    (size until maxVecSize).foreach( vecIdx => put(startIdx + vecIdx, 0.0))
   }
 }

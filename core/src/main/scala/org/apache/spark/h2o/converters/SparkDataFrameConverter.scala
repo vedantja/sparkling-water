@@ -17,13 +17,13 @@
 
 package org.apache.spark.h2o.converters
 
-import org.apache.spark._
+import org.apache.spark.{mllib, _}
 import org.apache.spark.h2o.H2OContext
 import org.apache.spark.h2o.backends.external.ExternalWriteConverterCtx
 import org.apache.spark.h2o.converters.WriteConverterCtxUtils.UploadPlan
 import org.apache.spark.h2o.utils.{H2OSchemaUtils, ReflectionUtils}
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.types._
+import org.apache.spark.sql.types.{BinaryType, BooleanType, ByteType, DateType, DoubleType, FloatType, IntegerType, LongType, ShortType, StringType, TimestampType, _}
 import org.apache.spark.sql.{DataFrame, H2OFrameRelation, Row, SQLContext}
 import water.fvec.{Frame, H2OFrame}
 import water.{ExternalFrameUtils, Key}
@@ -48,30 +48,39 @@ private[h2o] object SparkDataFrameConverter extends Logging {
     sqlContext.baseRelationToDataFrame(relation)
   }
 
+
+
   /** Transform Spark's DataFrame into H2O Frame */
   def toH2OFrame(hc: H2OContext, dataFrame: DataFrame, frameKeyName: Option[String]): H2OFrame = {
     import H2OSchemaUtils._
-    // Cache DataFrame RDD's
-    val dfRdd = dataFrame.rdd
+
+    // Flatten the dataframe so we don't have any nested rows
+    val flatDataFrame = flattenDataFrame(dataFrame)
+
+    val dfRdd = flatDataFrame.rdd
     val keyName = frameKeyName.getOrElse("frame_rdd_" + dfRdd.id + Key.rand())
 
-    // Flattens and expands RDD's schema
-    val flatRddSchema = expandedSchema(hc.sparkContext, dataFrame)
+    val elemMaxSizes = collectMaxElementSizes(hc.sparkContext, flatDataFrame)
+    val startPositions = collectElemStartPositions(elemMaxSizes)
+
+    // Expands RDD's schema ( Arrays and Vectors)
+    val flatRddSchema = expandedSchema(hc.sparkContext, H2OSchemaUtils.flattenSchema(dataFrame.schema), elemMaxSizes)
     // Patch the flat schema based on information about types
-    val fnames = flatRddSchema.map(t => t._2.name).toArray
+    val fnames = flatRddSchema.map(_.name).toArray
 
     // in case of internal backend, store regular vector types
     // otherwise for external backend store expected types
     val expectedTypes = if (hc.getConf.runsInInternalClusterMode) {
       // Transform datatype into h2o types
-      flatRddSchema.map(f => ReflectionUtils.vecTypeFor(f._2.dataType)).toArray
-    } else {
-      val internalJavaClasses = flatRddSchema.map { f =>
-        ExternalWriteConverterCtx.internalJavaClassOf(f._2.dataType)
+      flatRddSchema.map(f => ReflectionUtils.vecTypeFor(f.dataType)).toArray
+    }else{
+      val internalJavaClasses = flatRddSchema.map{f =>
+        ExternalWriteConverterCtx.internalJavaClassOf(f.dataType)
       }.toArray
       ExternalFrameUtils.prepareExpectedTypes(internalJavaClasses)
     }
-    WriteConverterCtxUtils.convert[Row](hc, dfRdd, keyName, fnames, expectedTypes, perSQLPartition(flatRddSchema))
+
+    WriteConverterCtxUtils.convert[Row](hc, dfRdd, keyName, fnames, expectedTypes, perSQLPartition(flatRddSchema, elemMaxSizes, startPositions))
   }
 
   /**
@@ -79,13 +88,15 @@ private[h2o] object SparkDataFrameConverter extends Logging {
     * @param keyName    key of the frame
     * @param vecTypes   h2o vec types
     * @param types      flat RDD schema
+    * @param elemMaxSizes array containing max size of each element in the dataframe
+    * @param startPositions array containing positions in h2o frame corresponding to spark frame
     * @param uploadPlan plan which assigns each partition h2o node where the data from that partition will be uploaded
     * @param context    spark task context
     * @param it         iterator over data in the partition
     * @return pair (partition ID, number of rows in this partition)
     */
   private[this]
-  def perSQLPartition(types: Seq[(Seq[Int], StructField, Byte)])
+  def perSQLPartition(types: Seq[StructField], elemMaxSizes: Array[Int], startPositions: Array[Int])
                      (keyName: String, vecTypes: Array[Byte], uploadPlan: Option[UploadPlan], writeTimeout: Int)
                      (context: TaskContext, it: Iterator[Row]): (Int, Long) = {
 
@@ -94,86 +105,7 @@ private[h2o] object SparkDataFrameConverter extends Logging {
     // Creates array of H2O NewChunks; A place to record all the data in this partition
     con.createChunks(keyName, vecTypes, context.partitionId())
 
-
-    iterator.foreach{sparkRowToH2ORow(_, con)}
-
-/*
-
-    iterator.foreach(row => {
-      var startOfSeq = -1
-      // Fill row in the output frame
-      types.indices.foreach { idx => // Index of column
-        val field = types(idx)
-        val path = field._1
-        val dataType = field._2.dataType
-        // Helpers to distinguish embedded collection types
-        val isAry = field._3 == H2OSchemaUtils.ARRAY_TYPE
-        val isVec = field._3 == H2OSchemaUtils.VEC_TYPE
-        val isNewPath = if (idx > 0) path != types(idx - 1)._1 else true
-        // Reset counter for sequences
-        if ((isAry || isVec) && isNewPath) startOfSeq = idx
-        else if (!isAry && !isVec) startOfSeq = -1
-
-        var i = 0
-        var subRow = row
-        while (i < path.length - 1 && !subRow.isNullAt(path(i))) {
-          subRow = subRow.getAs[Row](path(i))
-          i += 1
-        }
-        val aidx = path(i) // actual index into row provided by path
-        if (subRow.isNullAt(aidx)) {
-          con.putNA(idx)
-        } else {
-          val ary = if (isAry) subRow.getAs[Seq[_]](aidx) else null
-          val aryLen = if (isAry) ary.length else -1
-          val aryIdx = idx - startOfSeq // shared index to position in array/vector
-          val vecLen = if (isVec) getVecLen(subRow, aidx) else -1
-          if (isAry && aryIdx >= aryLen) con.putNA(idx)
-          else if (isVec && aryIdx >= vecLen) con.put(idx, 0.0) // Add zeros for double vectors
-          else dataType match {
-            case BooleanType => con.put(idx, if(isAry){
-              if (ary(aryIdx).asInstanceOf[Boolean]) 1 else 0
-            } else {
-              if (subRow.getBoolean(aidx)) 1 else 0)
-            })
-            case BinaryType =>
-            case ByteType => con.put(idx, if (isAry) ary(aryIdx).asInstanceOf[Byte] else subRow.getByte(aidx))
-            case ShortType => con.put(idx, if (isAry) ary(aryIdx).asInstanceOf[Short] else subRow.getShort(aidx))
-            case IntegerType => con.put(idx, if (isAry) ary(aryIdx).asInstanceOf[Int] else subRow.getInt(aidx))
-            case LongType => con.put(idx, if (isAry) ary(aryIdx).asInstanceOf[Long] else subRow.getLong(aidx))
-            case FloatType => con.put(idx, if (isAry) ary(aryIdx).asInstanceOf[Float] else subRow.getFloat(aidx))
-            case _: DecimalType => con.put(idx, if (isAry) {
-              ary(aryIdx).asInstanceOf[BigDecimal].doubleValue()
-            } else {
-              if (isVec) {
-                getVecVal(subRow, aidx, idx - startOfSeq)
-              } else {
-                subRow.getDecimal(aidx).doubleValue()
-              }
-            })
-            case DoubleType => con.put(idx, if (isAry) {
-              ary(aryIdx).asInstanceOf[Double]
-            } else {
-              if (isVec) {
-                getVecVal(subRow, aidx, idx - startOfSeq)
-              } else {
-                subRow.getDouble(aidx)
-              }
-            })
-            case StringType =>
-              val sv = if (isAry) ary(aryIdx).asInstanceOf[String] else subRow.getString(aidx)
-              // Always produce string vectors
-              con.put(idx, sv)
-
-            case TimestampType => con.put(idx, subRow.getAs[java.sql.Timestamp](aidx))
-            case DateType => con.put(idx, subRow.getAs[java.sql.Date](aidx))
-            case _ => con.putNA(idx)
-          }
-        }
-
-      }
-    })
-*/
+    iterator.foreach{sparkRowToH2ORow(_, con, startPositions, elemMaxSizes)}
 
     //Compress & write data in partitions to H2O Chunks
     con.closeChunks()
@@ -185,63 +117,61 @@ private[h2o] object SparkDataFrameConverter extends Logging {
   /**
     * Converts a single Spark Row to H2O Row with expanded vectors and arrays
     */
-  def sparkRowToH2ORow(subRow: Row, con: WriteConverterCtx, idx: Int = 0): Int = {
-    var currentIdx = idx
-    subRow.schema.fields.zipWithIndex.foreach { pair =>
-      val structEntry = pair._1
-      val idxInRow = pair._2
-      structEntry.dataType match {
-        case _: StructType => {
-          currentIdx = sparkRowToH2ORow(subRow.getAs[Row](idxInRow), con, currentIdx)
-        }
-        case simple: DataType =>
-          // Convert simple type
-          if (subRow.isNullAt(idxInRow)) {
-            con.putNA(currentIdx)
-          } else {
-            simple match {
-              case BooleanType => con.put(currentIdx, if (subRow.getBoolean(idxInRow)) 1 else 0)
-              case BinaryType =>
-              case ByteType => con.put(currentIdx, subRow.getByte(idxInRow))
-              case ShortType => con.put(currentIdx, subRow.getShort(idxInRow))
-              case IntegerType => con.put(currentIdx, subRow.getInt(idxInRow))
-              case LongType => con.put(currentIdx, subRow.getLong(idxInRow))
-              case FloatType => con.put(currentIdx, subRow.getFloat(idxInRow))
-              case _: DecimalType => con.put(currentIdx, subRow.getDecimal(idxInRow).doubleValue())
-              case DoubleType => con.put(currentIdx, subRow.getDouble(idxInRow))
-              case StringType => con.put(currentIdx, subRow.getString(idxInRow))
-              case TimestampType => con.put(currentIdx, subRow.getAs[java.sql.Timestamp](idxInRow))
-              case DateType => con.put(currentIdx, subRow.getAs[java.sql.Date](idxInRow))
-              case _ => con.putNA(currentIdx)
+  def sparkRowToH2ORow(row: Row, con: WriteConverterCtx, startIndices: Array[Int], elemSizes: Array[Int]) {
+    row.schema.fields.zipWithIndex.foreach { case( entry, idxRow) =>
+      val idxH2O = startIndices(idxRow)
+      if (row.isNullAt(idxRow)) {
+        con.putNA(idxH2O)
+      } else {
+        entry.dataType match {
+          case BooleanType => con.put(idxH2O, if (row.getBoolean(idxRow)) 1 else 0)
+          case BinaryType =>
+          case ByteType => con.put(idxH2O, row.getByte(idxRow))
+          case ShortType => con.put(idxH2O, row.getShort(idxRow))
+          case IntegerType => con.put(idxH2O, row.getInt(idxRow))
+          case LongType => con.put(idxH2O, row.getLong(idxRow))
+          case FloatType => con.put(idxH2O, row.getFloat(idxRow))
+          case _: DecimalType => con.put(idxH2O, row.getDecimal(idxRow).doubleValue())
+          case DoubleType => con.put(idxH2O, row.getDouble(idxRow))
+          case StringType => con.put(idxH2O, row.getString(idxRow))
+          case TimestampType => con.put(idxH2O, row.getAs[java.sql.Timestamp](idxRow))
+          case DateType => con.put(idxH2O, row.getAs[java.sql.Date](idxRow))
+          case ArrayType(elemType, _) => putArray(row.getAs[Seq[_]](idxRow), elemType, con, idxH2O, elemSizes(idxRow))
+          case _: UserDefinedType[_ /*mllib.linalg.Vector*/ ] => {
+            val value = row.get(idxRow)
+            value match {
+              case vector: mllib.linalg.Vector =>
+                con.putVector(idxH2O, vector, elemSizes(idxH2O))
+              case vector: ml.linalg.Vector =>
+                con.putVector(idxH2O, vector, elemSizes(idxH2O))
             }
           }
-          currentIdx = currentIdx + 1 // one column filled
+          case _ => con.putNA(idxH2O)
+        }
       }
     }
-    currentIdx // return number of written columns
   }
 
-  private def getVecLen(r: Row, idx: Int): Int = {
-    val value = r.get(idx)
-    value match {
-      case vector: mllib.linalg.Vector =>
-        vector.size
-      case vector: ml.linalg.Vector =>
-        vector.size
-      case _ =>
-        -1
+  private def putArray(arr: Seq[_], elemType: DataType, con: WriteConverterCtx, idx: Int, maxArrSize: Int) {
+    arr.indices.foreach { arrIdx =>
+      val currentIdx = idx + arrIdx
+      elemType match {
+        case BooleanType => con.put(currentIdx, if (arr(arrIdx).asInstanceOf[Boolean]) 1 else 0)
+        case BinaryType =>
+        case ByteType => con.put(currentIdx, arr(arrIdx).asInstanceOf[Byte])
+        case ShortType => con.put(currentIdx, arr(arrIdx).asInstanceOf[Short])
+        case IntegerType => con.put(currentIdx, arr(arrIdx).asInstanceOf[Int])
+        case LongType => con.put(currentIdx, arr(arrIdx).asInstanceOf[Long])
+        case FloatType => con.put(currentIdx, arr(arrIdx).asInstanceOf[Float])
+        case _: DecimalType => con.put(currentIdx, arr(arrIdx).asInstanceOf[BigDecimal].doubleValue())
+        case DoubleType => con.put(currentIdx, arr(arrIdx).asInstanceOf[Double])
+        case StringType => con.put(currentIdx, arr(arrIdx).asInstanceOf[String])
+        case TimestampType => con.put(currentIdx, arr(arrIdx).asInstanceOf[java.sql.Timestamp])
+        case DateType => con.put(currentIdx, arr(arrIdx).asInstanceOf[java.sql.Date])
+        case _ => con.putNA(currentIdx)
+      }
     }
-  }
 
-  private def getVecVal(r: Row, ridx: Int, vidx: Int): Double = {
-    val value = r.get(ridx)
-    value match {
-      case vector: mllib.linalg.Vector =>
-        vector(vidx)
-      case vector: ml.linalg.Vector =>
-        vector(vidx)
-      case _ =>
-        throw new ArrayIndexOutOfBoundsException(s"Row: ${r}, row index: ${ridx}, vector index: ${vidx}")
-    }
+    (arr.size until maxArrSize).foreach{ arrIdx => con.putNA(idx + arrIdx) }
   }
 }
