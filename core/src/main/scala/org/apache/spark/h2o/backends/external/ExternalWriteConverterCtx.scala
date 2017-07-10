@@ -70,7 +70,6 @@ class ExternalWriteConverterCtx(nodeDesc: NodeDesc, totalNumOfRows: Int, writeTi
 
   override def putSparseVector(startIdx: Int, vector: SparseVector, maxVecSize: Int): Unit = ???
 
-  override def putDenseVector(startIdx: Int, vector: DenseVector, maxVecSize: Int): Unit = ???
 }
 
 

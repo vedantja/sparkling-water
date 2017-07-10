@@ -20,9 +20,8 @@ package org.apache.spark.h2o.backends.internal
 import java.sql.{Date, Timestamp}
 
 import org.apache.spark.h2o.converters.WriteConverterCtx
-import org.apache.spark.mllib.linalg.{DenseVector, SparseVector}
+import org.apache.spark.mllib.linalg.SparseVector
 import water.fvec.{FrameUtils, NewChunk}
-import org.apache.spark._
 
 class InternalWriteConverterCtx extends WriteConverterCtx {
 
@@ -52,18 +51,6 @@ class InternalWriteConverterCtx extends WriteConverterCtx {
 
 
   override def putSparseVector(startIdx: Int, vector: SparseVector, maxVecSize: Int): Unit = {
-    putAnyVector(startIdx, vector, maxVecSize)
-  }
-
-  override def putDenseVector(startIdx: Int, vector: DenseVector, maxVecSize: Int): Unit = {
-    putAnyVector(startIdx, vector, maxVecSize)
-  }
-
-  /**
-    * In case of internal backend, storing of sparse and dense vector is the same
-
-    */
-  private def putAnyVector(startIdx: Int, vector: mllib.linalg.Vector, maxVecSize: Int): Unit = {
     (0 until vector.size).foreach{ idx => put(startIdx + idx, vector(idx))}
 
     (vector.size until maxVecSize).foreach( idx => put(startIdx + idx, 0.0))

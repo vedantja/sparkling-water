@@ -57,7 +57,11 @@ trait WriteConverterCtx {
 
   def putSparseVector(startIdx: Int, vector: mllib.linalg.SparseVector, maxVecSize: Int)
 
-  def putDenseVector(startIdx: Int, vector: mllib.linalg.DenseVector, maxVecSize: Int)
+  def putDenseVector(startIdx: Int, vector: mllib.linalg.DenseVector, maxVecSize: Int): Unit = {
+    (0 until vector.size).foreach{ idx => put(startIdx + idx, vector(idx))}
+
+    (vector.size until maxVecSize).foreach( idx => put(startIdx + idx, 0.0))
+  }
 
   def putAnySupportedType[T](colIdx: Int, data: T): Unit = {
     data match {
