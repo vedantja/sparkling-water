@@ -55,9 +55,9 @@ trait WriteConverterCtx {
 
   def putNA(colIdx: Int)
 
-  def putSparseVector(startIdx: Int, size: Int, indices: Array[Int], values: Array[Double], maxVecSize: Int)
+  def putSparseVector(startIdx: Int, vector: mllib.linalg.SparseVector, maxVecSize: Int)
 
-  def putDenseVector(startIdx: Int, size: Int, values: Array[Double], maxVecSize: Int)
+  def putDenseVector(startIdx: Int, vector: mllib.linalg.DenseVector, maxVecSize: Int)
 
   def putAnySupportedType[T](colIdx: Int, data: T): Unit = {
     data match {
@@ -79,10 +79,10 @@ trait WriteConverterCtx {
   def putVector(startIdx: Int, vec: mllib.linalg.Vector, maxVecSize: Int): Unit = {
     if(vec.isInstanceOf[SparseVector]){
       val sparseVec = vec.toSparse
-      putSparseVector(startIdx, sparseVec.size, sparseVec.indices, sparseVec.values, maxVecSize)
+      putSparseVector(startIdx, sparseVec, maxVecSize)
     }else{
       val denseVector = vec.toDense
-      putDenseVector(startIdx, denseVector.size, denseVector.values, maxVecSize)
+      putDenseVector(startIdx, denseVector, maxVecSize)
     }
   }
 

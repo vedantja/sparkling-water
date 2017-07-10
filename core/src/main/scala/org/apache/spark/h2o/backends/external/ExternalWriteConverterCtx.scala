@@ -21,6 +21,7 @@ import org.apache.spark.h2o.converters.WriteConverterCtx
 import org.apache.spark.h2o.converters.WriteConverterCtxUtils.UploadPlan
 import org.apache.spark.h2o.utils.SupportedTypes._
 import org.apache.spark.h2o.utils.{NodeDesc, ReflectionUtils}
+import org.apache.spark.mllib.linalg.{DenseVector, SparseVector}
 import org.apache.spark.sql.types._
 import water.{ExternalFrameConfirmationException, ExternalFrameUtils, ExternalFrameWriterClient}
 
@@ -67,9 +68,9 @@ class ExternalWriteConverterCtx(nodeDesc: NodeDesc, totalNumOfRows: Int, writeTi
 
   override def numOfRows(): Int = totalNumOfRows
 
-  override def putSparseVector(startIdx: Int, size: Int, indices: Array[Int], values: Array[Double], maxVecSize: Int): Unit = ???
+  override def putSparseVector(startIdx: Int, vector: SparseVector, maxVecSize: Int): Unit = ???
 
-  override def putDenseVector(startIdx: Int, size: Int, values: Array[Double], maxVecSize: Int): Unit = ???
+  override def putDenseVector(startIdx: Int, vector: DenseVector, maxVecSize: Int): Unit = ???
 }
 
 

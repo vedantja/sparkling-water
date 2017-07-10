@@ -20,7 +20,9 @@ package org.apache.spark.h2o.backends.internal
 import java.sql.{Date, Timestamp}
 
 import org.apache.spark.h2o.converters.WriteConverterCtx
+import org.apache.spark.mllib.linalg.{DenseVector, SparseVector}
 import water.fvec.{FrameUtils, NewChunk}
+import org.apache.spark._
 
 class InternalWriteConverterCtx extends WriteConverterCtx {
 
@@ -48,22 +50,23 @@ class InternalWriteConverterCtx extends WriteConverterCtx {
 
   override def numOfRows(): Int = chunks(0).len()
 
-  override def putSparseVector(startIdx: Int, size: Int, indices: Array[Int], values: Array[Double], maxVecSize: Int): Unit = {
-    (0 until size).filter(!indices.contains(_)).foreach{ idx =>
-      put(startIdx + idx, 0)
-    }
 
-    indices.indices.foreach{ idx =>
-      put(startIdx + idx, values(idx))
-    }
-    (size until maxVecSize).foreach( vecIdx => put(startIdx + vecIdx, 0.0))
+  override def putSparseVector(startIdx: Int, vector: SparseVector, maxVecSize: Int): Unit = {
+    putAnyVector(startIdx, vector, maxVecSize)
   }
 
-  override def putDenseVector(startIdx: Int, size: Int, values: Array[Double], maxVecSize: Int): Unit = {
-    values.indices.foreach{ idx =>
-      put(startIdx + idx, values(idx))
-    }
-
-    (size until maxVecSize).foreach( vecIdx => put(startIdx + vecIdx, 0.0))
+  override def putDenseVector(startIdx: Int, vector: DenseVector, maxVecSize: Int): Unit = {
+    putAnyVector(startIdx, vector, maxVecSize)
   }
+
+  /**
+    * In case of internal backend, storing of sparse and dense vector is the same
+
+    */
+  private def putAnyVector(startIdx: Int, vector: mllib.linalg.Vector, maxVecSize: Int): Unit = {
+    (0 until vector.size).foreach{ idx => put(startIdx + idx, vector(idx))}
+
+    (vector.size until maxVecSize).foreach( idx => put(startIdx + idx, 0.0))
+  }
+
 }
