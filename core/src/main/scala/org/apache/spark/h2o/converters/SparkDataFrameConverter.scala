@@ -19,7 +19,7 @@ package org.apache.spark.h2o.converters
 
 import org.apache.spark.{mllib, _}
 import org.apache.spark.h2o.H2OContext
-import org.apache.spark.h2o.backends.external.ExternalWriteConverterCtx
+import org.apache.spark.h2o.backends.external.{ExternalBackendUtils, ExternalWriteConverterCtx}
 import org.apache.spark.h2o.converters.WriteConverterCtxUtils.UploadPlan
 import org.apache.spark.h2o.utils.{H2OSchemaUtils, ReflectionUtils}
 import org.apache.spark.internal.Logging
@@ -61,6 +61,7 @@ private[h2o] object SparkDataFrameConverter extends Logging {
     val keyName = frameKeyName.getOrElse("frame_rdd_" + dfRdd.id + Key.rand())
 
     val elemMaxSizes = collectMaxElementSizes(hc.sparkContext, flatDataFrame)
+    val vecMaxSizes = collectVectorLikeTypes(flatDataFrame.schema).map(elemMaxSizes(_)).toArray
     val startPositions = collectElemStartPositions(elemMaxSizes)
 
     // Expands RDD's schema ( Arrays and Vectors)
@@ -74,13 +75,13 @@ private[h2o] object SparkDataFrameConverter extends Logging {
       // Transform datatype into h2o types
       flatRddSchema.map(f => ReflectionUtils.vecTypeFor(f.dataType)).toArray
     }else{
-      val internalJavaClasses = flatRddSchema.map{f =>
+      val internalJavaClasses = H2OSchemaUtils.expandWithoutVectors(hc.sparkContext, H2OSchemaUtils.flattenSchema(dataFrame.schema), elemMaxSizes).map{f =>
         ExternalWriteConverterCtx.internalJavaClassOf(f.dataType)
       }.toArray
-      ExternalFrameUtils.prepareExpectedTypes(internalJavaClasses)
+      ExternalBackendUtils.prepareExpectedTypes(internalJavaClasses)
     }
 
-    WriteConverterCtxUtils.convert[Row](hc, dfRdd, keyName, fnames, expectedTypes, perSQLPartition(flatRddSchema, elemMaxSizes, startPositions))
+    WriteConverterCtxUtils.convert[Row](hc, dfRdd, keyName, fnames, expectedTypes, vecMaxSizes, perSQLPartition(flatRddSchema, elemMaxSizes, vecMaxSizes, startPositions))
   }
 
   /**
@@ -96,14 +97,14 @@ private[h2o] object SparkDataFrameConverter extends Logging {
     * @return pair (partition ID, number of rows in this partition)
     */
   private[this]
-  def perSQLPartition(types: Seq[StructField], elemMaxSizes: Array[Int], startPositions: Array[Int])
+  def perSQLPartition(types: Seq[StructField], elemMaxSizes: Array[Int], vecMaxSizes: Array[Int], startPositions: Array[Int])
                      (keyName: String, vecTypes: Array[Byte], uploadPlan: Option[UploadPlan], writeTimeout: Int)
                      (context: TaskContext, it: Iterator[Row]): (Int, Long) = {
 
     val (iterator, dataSize) = WriteConverterCtxUtils.bufferedIteratorWithSize(uploadPlan, it)
     val con = WriteConverterCtxUtils.create(uploadPlan, context.partitionId(), dataSize, writeTimeout)
     // Creates array of H2O NewChunks; A place to record all the data in this partition
-    con.createChunks(keyName, vecTypes, context.partitionId())
+    con.createChunks(keyName, vecTypes, context.partitionId(), vecMaxSizes)
 
     iterator.foreach{sparkRowToH2ORow(_, con, startPositions, elemMaxSizes)}
 

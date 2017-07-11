@@ -131,6 +131,19 @@ object H2OSchemaUtils {
     expandedSchema
   }
 
+  def expandWithoutVectors(sc: SparkContext, flatSchema: StructType, elemMaxSizes: Array[Int]): Seq[StructField] = {
+    val expandedSchema = flatSchema.fields.zipWithIndex.flatMap{case (field, idx) =>
+      field.dataType match {
+        case ArrayType(arrType, nullable) =>
+          (0 until elemMaxSizes(idx)).map{ arrIdx =>
+            StructField(field.name + arrIdx.toString, arrType, nullable)
+          }
+        case _ => Seq(field)
+      }
+    }
+    expandedSchema
+  }
+
   /**
     * Mapping from row in Spark frame to position where to start filling in H2OFrame
     */
@@ -209,7 +222,7 @@ object H2OSchemaUtils {
     }
   }
 
-  private def collectVectorLikeTypes(flatSchema: StructType): Seq[Int] = {
+  def collectVectorLikeTypes(flatSchema: StructType): Seq[Int] = {
     flatSchema.fields.zipWithIndex.flatMap { case (field, idx) =>
       field.dataType match {
         case _: UserDefinedType[_ /*mllib.linalg.Vector*/ ] => Option(idx)

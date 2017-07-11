@@ -51,7 +51,7 @@ private[converters] object MLLibVectorConverter extends Logging {
     val typeToUse = if(hc.getConf.runsInInternalClusterMode) Vec.T_NUM else ExternalFrameUtils.EXPECTED_DOUBLE
     val expectedTypes = Array.fill(maxNumFeatures)(typeToUse)
 
-    WriteConverterCtxUtils.convert[mllib.linalg.Vector](hc, rdd, keyName, fnames, expectedTypes, perMLlibVectorPartition(maxNumFeatures))
+    WriteConverterCtxUtils.convert[mllib.linalg.Vector](hc, rdd, keyName, fnames, expectedTypes, Array(maxNumFeatures), perMLlibVectorPartition(maxNumFeatures))
   }
 
 
@@ -72,7 +72,7 @@ private[converters] object MLLibVectorConverter extends Logging {
     val (iterator, dataSize) = WriteConverterCtxUtils.bufferedIteratorWithSize(uploadPlan, it)
     val con = WriteConverterCtxUtils.create(uploadPlan, context.partitionId(), dataSize, writeTimeout)
     // Creates array of H2O NewChunks; A place to record all the data in this partition
-    con.createChunks(keyName, vecTypes, context.partitionId())
+    con.createChunks(keyName, vecTypes, context.partitionId(), Array(maxNumFeatures))
 
     iterator.foreach(vec => con.putVector(0, vec, maxNumFeatures))
 

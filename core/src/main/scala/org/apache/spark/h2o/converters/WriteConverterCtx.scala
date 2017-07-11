@@ -27,7 +27,7 @@ import org.apache.spark.mllib.linalg.{SparseVector, Vectors}
   * via unified API
   */
 trait WriteConverterCtx {
-  def createChunks(keyName: String, vecTypes: Array[Byte], chunkId: Int)
+  def createChunks(keyName: String, vecTypes: Array[Byte], chunkId: Int, maxVecSizes: Array[Int])
 
   def closeChunks()
 
@@ -57,11 +57,7 @@ trait WriteConverterCtx {
 
   def putSparseVector(startIdx: Int, vector: mllib.linalg.SparseVector, maxVecSize: Int)
 
-  def putDenseVector(startIdx: Int, vector: mllib.linalg.DenseVector, maxVecSize: Int): Unit = {
-    (0 until vector.size).foreach{ idx => put(startIdx + idx, vector(idx))}
-
-    (vector.size until maxVecSize).foreach( idx => put(startIdx + idx, 0.0))
-  }
+  def putDenseVector(startIdx: Int, vector: mllib.linalg.DenseVector, maxVecSize: Int)
 
   def putAnySupportedType[T](colIdx: Int, data: T): Unit = {
     data match {
