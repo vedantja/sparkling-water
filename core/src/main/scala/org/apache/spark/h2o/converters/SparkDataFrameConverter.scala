@@ -59,7 +59,6 @@ private[h2o] object SparkDataFrameConverter extends Logging {
 
     val dfRdd = flatDataFrame.rdd
     val keyName = frameKeyName.getOrElse("frame_rdd_" + dfRdd.id + Key.rand())
-
     val elemMaxSizes = collectMaxElementSizes(hc.sparkContext, flatDataFrame)
     val vecMaxSizes = collectVectorLikeTypes(flatDataFrame.schema).map(elemMaxSizes(_)).toArray
     val startPositions = collectElemStartPositions(elemMaxSizes)

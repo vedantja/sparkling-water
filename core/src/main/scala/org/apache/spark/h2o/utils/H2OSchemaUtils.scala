@@ -132,10 +132,10 @@ object H2OSchemaUtils {
   }
 
   def expandWithoutVectors(sc: SparkContext, flatSchema: StructType, elemMaxSizes: Array[Int]): Seq[StructField] = {
-    val expandedSchema = flatSchema.fields.zipWithIndex.flatMap{case (field, idx) =>
+    val expandedSchema = flatSchema.fields.zipWithIndex.flatMap { case (field, idx) =>
       field.dataType match {
         case ArrayType(arrType, nullable) =>
-          (0 until elemMaxSizes(idx)).map{ arrIdx =>
+          (0 until elemMaxSizes(idx)).map { arrIdx =>
             StructField(field.name + arrIdx.toString, arrType, nullable)
           }
         case _ => Seq(field)
@@ -165,7 +165,7 @@ object H2OSchemaUtils {
     * For vectors -> max vector size
     * For simple types -> 1
     *
-    * @return list of max sizes for array types, followed by max sizes for vector types.
+    * @return array containing size of each element
     */
   def collectMaxElementSizes(sc: SparkContext, flatDataFrame: DataFrame): Array[Int] = {
     val arrayIndices = collectArrayLikeTypes(flatDataFrame.schema)

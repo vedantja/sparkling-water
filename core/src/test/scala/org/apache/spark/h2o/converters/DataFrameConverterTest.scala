@@ -519,7 +519,7 @@ class DataFrameConverterTest extends FunSuite with SharedSparkTestContext {
     val num = 3
     val values = (0 until num).map(x =>
       PrimitiveC(
-        Vectors.sparse(num, (0 until num).map(i => if (i == x) (i, 1.0) else (i, 0.0)))
+        Vectors.sparse(num, Seq((x, 1.0)))
       ))
     val df = sc.parallelize(values).toDF()
 
