@@ -29,6 +29,6 @@ private[converters] object MLVectorConverter extends Logging {
   /** Transform RDD[ml.linalg.Vector] to appropriate H2OFrame */
   def toH2OFrame(hc: H2OContext, rdd: RDD[ml.linalg.Vector], frameKeyName: Option[String]): H2OFrame = {
     // convert to mllib vector so we have single place in code where we handle this case
-    MLLibVectorConverter.toH2OFrame(hc,rdd.map(Vectors.fromML), frameKeyName)
+    MLLibVectorConverter.toH2OFrame(hc, rdd.map(Vectors.fromML), frameKeyName)
   }
 }

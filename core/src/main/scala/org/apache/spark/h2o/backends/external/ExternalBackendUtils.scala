@@ -25,7 +25,7 @@ import water.{ExternalFrameUtils, H2O}
 /**
   * Various helper methods used in the external backend
   */
-private[external] trait ExternalBackendUtils extends SharedBackendUtils{
+private[external] trait ExternalBackendUtils extends SharedBackendUtils {
 
   /**
     * Get arguments for H2O client
@@ -43,9 +43,9 @@ private[external] trait ExternalBackendUtils extends SharedBackendUtils{
   }
 }
 
-object ExternalBackendUtils extends ExternalBackendUtils{
+object ExternalBackendUtils extends ExternalBackendUtils {
 
-  def  prepareExpectedTypes(classes: Array[Class[_]]): Array[Byte] = {
+  def prepareExpectedTypes(classes: Array[Class[_]]): Array[Byte] = {
     classes.map { clazz =>
       if (clazz == classOf[java.lang.Boolean]) {
         ExternalFrameUtils.EXPECTED_BOOL
@@ -69,7 +69,7 @@ object ExternalBackendUtils extends ExternalBackendUtils{
         ExternalFrameUtils.EXPECTED_TIMESTAMP
       } else if (clazz == classOf[org.apache.spark.mllib.linalg.Vector]) {
         ExternalFrameUtils.EXPECTED_VECTOR
-      }else{
+      } else {
         throw new RuntimeException("Unsupported class: " + clazz)
       }
     }

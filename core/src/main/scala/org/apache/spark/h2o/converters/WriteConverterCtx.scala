@@ -77,10 +77,10 @@ trait WriteConverterCtx {
   }
 
   def putVector(startIdx: Int, vec: mllib.linalg.Vector, maxVecSize: Int): Unit = {
-    if(vec.isInstanceOf[SparseVector]){
+    if (vec.isInstanceOf[SparseVector]) {
       val sparseVec = vec.toSparse
       putSparseVector(startIdx, sparseVec, maxVecSize)
-    }else{
+    } else {
       val denseVector = vec.toDense
       putDenseVector(startIdx, denseVector, maxVecSize)
     }
