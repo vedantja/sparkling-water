@@ -64,7 +64,7 @@ object ExternalBackendUtils extends ExternalBackendUtils {
       } else if (clazz == classOf[java.lang.Double]) {
         ExternalFrameUtils.EXPECTED_DOUBLE
       } else if (clazz == classOf[java.lang.String]) {
-        ExternalFrameUtils.EXPECTED_SHORT
+        ExternalFrameUtils.EXPECTED_STRING
       } else if (clazz == classOf[java.sql.Timestamp]) {
         ExternalFrameUtils.EXPECTED_TIMESTAMP
       } else if (clazz == classOf[org.apache.spark.mllib.linalg.Vector]) {
