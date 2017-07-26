@@ -1,6 +1,6 @@
-dist:precise
 language: scala
 sudo: true
+dist: precise
 
 jdk:
   - oraclejdk7
